@@ -119,10 +119,6 @@ func (h CSRFHandler) getCookieName() string {
 func (h *CSRFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = addNosurfContext(r)
 	defer ctxClear(r)
-	if h.IsIgnored(r) {
-		h.handleSuccess(w, r)
-		return
-	}
 
 	w.Header().Add("Vary", "Cookie")
 
@@ -142,12 +138,18 @@ func (h *CSRFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// As a consequence, CSRF check will fail when comparing the tokens later on,
 	// so we don't have to fail it just yet.
 	if len(realToken) != tokenLength {
-		h.RegenerateToken(w, r)
+		if !h.IsIgnored(r) {
+			h.RegenerateToken(w, r)
+		}
 	} else {
 		ctxSetToken(r, realToken)
 	}
+	if h.IsIgnored(r) {
+		h.handleSuccess(w, r)
+		return
+	}
 
-	if sContains(safeMethods, r.Method) || h.IsExempt(r) {
+	if sContains(safeMethods, r.Method) || h.IsExempt(r) || h.IsIgnored(r) {
 		// short-circuit with a success for safe methods
 		h.handleSuccess(w, r)
 		return
