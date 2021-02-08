@@ -42,7 +42,7 @@ type CSRFHandler struct {
 	// The base cookie that CSRF cookies will be built upon.
 	// This should be a better solution of customizing the options
 	// than a bunch of methods SetCookieExpiration(), etc.
-	baseCookie http.Cookie
+	baseCookieFunc func(w http.ResponseWriter, r *http.Request) http.Cookie
 
 	// Slices of paths that are exempt from CSRF checks.
 	// They can be specified by...
@@ -97,7 +97,9 @@ func New(handler http.Handler) *CSRFHandler {
 
 	csrf := &CSRFHandler{successHandler: handler,
 		failureHandler: http.HandlerFunc(defaultFailureHandler),
-		baseCookie:     baseCookie,
+		baseCookieFunc: func(w http.ResponseWriter, r *http.Request) http.Cookie {
+			return baseCookie
+		},
 	}
 
 	return csrf
@@ -108,9 +110,9 @@ func NewPure(handler http.Handler) http.Handler {
 	return New(handler)
 }
 
-func (h CSRFHandler) getCookieName() string {
-	if h.baseCookie.Name != "" {
-		return h.baseCookie.Name
+func (h CSRFHandler) getCookieName(w http.ResponseWriter, r *http.Request) string {
+	if name := h.baseCookieFunc(w,r).Name; name != "" {
+		return name
 	}
 
 	return CookieName
@@ -124,7 +126,7 @@ func (h *CSRFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var realToken []byte
 
-	tokenCookie, err := r.Cookie(h.getCookieName())
+	tokenCookie, err := r.Cookie(h.getCookieName(w,r))
 	if err == nil {
 		realToken = b64decode(tokenCookie.Value)
 	}
@@ -225,8 +227,8 @@ func (h *CSRFHandler) setTokenCookie(w http.ResponseWriter, r *http.Request, tok
 	// ctxSetToken() does the masking for us
 	ctxSetToken(r, token)
 
-	cookie := h.baseCookie
-	cookie.Name = h.getCookieName()
+	cookie := h.baseCookieFunc(w,r)
+	cookie.Name = h.getCookieName(w,r)
 	cookie.Value = b64encode(token)
 
 	http.SetCookie(w, &cookie)
@@ -243,5 +245,13 @@ func (h *CSRFHandler) SetFailureHandler(handler http.Handler) {
 // Sets the base cookie to use when building a CSRF token cookie
 // This way you can specify the Domain, Path, HttpOnly, Secure, etc.
 func (h *CSRFHandler) SetBaseCookie(cookie http.Cookie) {
-	h.baseCookie = cookie
+	h.baseCookieFunc = func(w http.ResponseWriter, r *http.Request) http.Cookie {
+		return cookie
+	}
+}
+
+// Similar to SetBaseCookie but accepts a function which receives the HTTP response and HTTP request
+// for potential contextualization.
+func (h *CSRFHandler) SetBaseCookieFunc(f func(w http.ResponseWriter, r *http.Request) http.Cookie) {
+	h.baseCookieFunc = f
 }
