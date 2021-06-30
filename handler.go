@@ -57,6 +57,8 @@ type CSRFHandler struct {
 
 	// Slices of paths that completely ignore this middleware.
 	ignorePaths []string
+	// ...or a glob (as used by path.Match()).
+	ignoreGlobs []string
 
 	// All of those will be matched against Request.URL.Path,
 	// So they should take the leading slash into account
@@ -111,7 +113,7 @@ func NewPure(handler http.Handler) http.Handler {
 }
 
 func (h CSRFHandler) getCookieName(w http.ResponseWriter, r *http.Request) string {
-	if name := h.baseCookieFunc(w,r).Name; name != "" {
+	if name := h.baseCookieFunc(w, r).Name; name != "" {
 		return name
 	}
 
@@ -126,7 +128,7 @@ func (h *CSRFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var realToken []byte
 
-	tokenCookie, err := r.Cookie(h.getCookieName(w,r))
+	tokenCookie, err := r.Cookie(h.getCookieName(w, r))
 	if err == nil {
 		realToken = b64decode(tokenCookie.Value)
 	}
@@ -151,7 +153,7 @@ func (h *CSRFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if sContains(safeMethods, r.Method) || h.IsExempt(r)  {
+	if sContains(safeMethods, r.Method) || h.IsExempt(r) {
 		// short-circuit with a success for safe methods
 		h.handleSuccess(w, r)
 		return
@@ -227,8 +229,8 @@ func (h *CSRFHandler) setTokenCookie(w http.ResponseWriter, r *http.Request, tok
 	// ctxSetToken() does the masking for us
 	ctxSetToken(r, token)
 
-	cookie := h.baseCookieFunc(w,r)
-	cookie.Name = h.getCookieName(w,r)
+	cookie := h.baseCookieFunc(w, r)
+	cookie.Name = h.getCookieName(w, r)
 	cookie.Value = b64encode(token)
 
 	http.SetCookie(w, &cookie)

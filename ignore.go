@@ -1,6 +1,9 @@
 package nosurf
 
-import "net/http"
+import (
+	"net/http"
+	pathModule "path"
+)
 
 // Ignores the CSRF middleware for an exact path
 // With this you should take note that Go's paths
@@ -16,5 +19,21 @@ func (h *CSRFHandler) IsIgnored(r *http.Request) bool {
 		return true
 	}
 
+	// then the globs
+	for _, glob := range h.ignoreGlobs {
+		matched, err := pathModule.Match(glob, path)
+		if matched && err == nil {
+			return true
+		}
+	}
+
 	return false
+}
+
+func (h *CSRFHandler) IgnoreGlob(pattern string) {
+	h.ignoreGlobs = append(h.ignoreGlobs, pattern)
+}
+
+func (h *CSRFHandler) IgnoreGlobs(patterns ...string) {
+	h.ignoreGlobs = append(h.ignoreGlobs, patterns...)
 }
