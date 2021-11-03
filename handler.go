@@ -60,6 +60,11 @@ type CSRFHandler struct {
 	// ...or a glob (as used by path.Match()).
 	ignoreGlobs []string
 
+	// Slices of paths that completely disable this middleware.
+	disablePaths []string
+	// ...or a glob (as used by path.Match()).
+	disableGlobs []string
+
 	// All of those will be matched against Request.URL.Path,
 	// So they should take the leading slash into account
 }
@@ -121,6 +126,11 @@ func (h CSRFHandler) getCookieName(w http.ResponseWriter, r *http.Request) strin
 }
 
 func (h *CSRFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.IsDisabled(r) {
+		h.handleSuccess(w, r)
+		return
+	}
+
 	r = addNosurfContext(r)
 	defer ctxClear(r)
 
@@ -148,6 +158,7 @@ func (h *CSRFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		ctxSetToken(r, realToken)
 	}
+
 	if h.IsIgnored(r) {
 		h.handleSuccess(w, r)
 		return
