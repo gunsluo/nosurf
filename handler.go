@@ -136,11 +136,11 @@ func (h *CSRFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Add("Vary", "Cookie")
 
-	var realToken []byte
-
-	tokenCookie, err := r.Cookie(h.getCookieName(w, r))
-	if err == nil {
-		realToken = b64decode(tokenCookie.Value)
+	var realTokens [][]byte
+	for _, tokenCookie := range r.Cookies() {
+		if tokenCookie.Name == h.getCookieName(w, r) {
+			realTokens = append(realTokens, b64decode(tokenCookie.Value))
+		}
 	}
 
 	// If the length of the real token isn't what it should be,
@@ -151,12 +151,34 @@ func (h *CSRFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//
 	// As a consequence, CSRF check will fail when comparing the tokens later on,
 	// so we don't have to fail it just yet.
-	if len(realToken) != tokenLength {
+	if len(realTokens) == 0 {
+		// If we received no token (len==0), it means no CSRF cookie exists. We need to regenerate.
+		if !h.IsIgnored(r) {
+			h.RegenerateToken(w, r)
+		}
+	} else if len(realTokens) == 1 && len(realTokens[0]) != tokenLength {
+		// We received one token, but it's not the right length.
+		if !h.IsIgnored(r) {
+			h.RegenerateToken(w, r)
+		}
+	} else if len(realTokens) > 1 {
+		// We received multiple tokens. We need to find the correct one and set it.
+		sentToken := extractToken(r)
+		for _, realToken := range realTokens {
+			if verifyToken(realToken, sentToken) {
+				realTokens = [][]byte{realToken}
+				break
+			}
+		}
+
+		// We have to regenerate because we only want one CSRF cookie. This is like
+		// a cleanup job!
 		if !h.IsIgnored(r) {
 			h.RegenerateToken(w, r)
 		}
 	} else {
-		ctxSetToken(r, realToken)
+		// We received one token, and it's the right length
+		ctxSetToken(r, realTokens[0])
 	}
 
 	if h.IsIgnored(r) {
@@ -195,7 +217,7 @@ func (h *CSRFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Finally, we check the token itself.
 	sentToken := extractToken(r)
 
-	if !verifyToken(realToken, sentToken) {
+	if !verifyToken(realTokens[0], sentToken) {
 		ctxSetReason(r, ErrBadToken)
 		h.handleFailure(w, r)
 		return
