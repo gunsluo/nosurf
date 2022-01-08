@@ -317,37 +317,11 @@ func TestWrongTokenFails(t *testing.T) {
 	}
 }
 
-func TestCustomCookieName(t *testing.T) {
-	hand := New(http.HandlerFunc(succHand))
-
-	if hand.getCookieName(nil, nil) != CookieName {
-		t.Errorf("No base cookie set, expected CookieName to be %s, was %s", CookieName, hand.getCookieName(nil, nil))
-	}
-
-	hand.SetBaseCookie(http.Cookie{})
-
-	if hand.getCookieName(nil, nil) != CookieName {
-		t.Errorf("Base cookie with empty name set, expected CookieName to be %s, was %s", CookieName, hand.getCookieName(nil, nil))
-	}
-
-	customCookieName := "my_custom_cookie"
-	hand.SetBaseCookie(http.Cookie{
-		Name: customCookieName,
-	})
-
-	if hand.getCookieName(nil, nil) != customCookieName {
-		t.Errorf("Base cookie with name %s was set, but CookieName was %s instead", customCookieName, hand.getCookieName(nil, nil))
-	}
-}
-
 // For this and similar tests we start a test server
 // Since it's much easier to get the cookie
 // from a normal http.Response than from the recorder
-func TestCorrectTokenPasses(t *testing.T) {
+func TestFunctionalCases(t *testing.T) {
 	hand := New(http.HandlerFunc(succHand))
-	hand.SetFailureHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("Test failed. Reason: %v", Reason(r))
-	}))
 
 	server := httptest.NewServer(hand)
 	defer server.Close()
@@ -371,26 +345,115 @@ func TestCorrectTokenPasses(t *testing.T) {
 	}
 
 	// Test usual POST
-	/*
-		{
-			req, err := http.NewRequest("POST", server.URL, formBodyR(vals))
-			if err != nil {
-				t.Fatal(err)
-			}
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			req.AddCookie(cookie)
-
-			resp, err = http.DefaultClient.Do(req)
-
-			if err != nil {
-				t.Fatal(err)
-			}
-			if resp.StatusCode != 200 {
-				t.Errorf("The request should have succeeded, but it didn't. Instead, the code was %d",
-					resp.StatusCode)
-			}
+	{
+		req, err := http.NewRequest("POST", server.URL, formBodyR(vals))
+		if err != nil {
+			t.Fatal(err)
 		}
-	*/
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(cookie)
+
+		resp, err = http.DefaultClient.Do(req)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != 200 {
+			t.Errorf("The request should have succeeded, but it didn't. Instead, the code was %d",
+				resp.StatusCode)
+		}
+	}
+
+	// Test multiple cookies (pass)
+	{
+		req, err := http.NewRequest("POST", server.URL, formBodyR(vals))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		// Add cookies with invalid values
+		for i := 0; i < 10; i++ {
+			cookieCopy := *cookie
+			cookieCopy.Value = b64encode(generateToken())
+			req.AddCookie(&cookieCopy)
+		}
+
+		// Add the real cookie.
+		req.AddCookie(cookie)
+
+		resp, err = http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if resp.StatusCode != 200 {
+			t.Errorf("The request should have succeeded, but it didn't. Instead, the code was %d",
+				resp.StatusCode)
+		}
+
+		if len(resp.Cookies()) != 1 {
+			t.Errorf("The request should have have included exactly one cookie but got %+v",
+				resp.Cookies())
+		}
+	}
+
+	// Test multiple cookies (fail)
+	{
+		req, err := http.NewRequest("POST", server.URL, formBodyR(vals))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		// Add cookies with invalid values
+		for i := 0; i < 10; i++ {
+			cookieCopy := *cookie
+			cookieCopy.Value = b64encode(generateToken())
+			req.AddCookie(&cookieCopy)
+		}
+
+		resp, err = http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if resp.StatusCode != FailureCode {
+			t.Errorf("The request should have failed, but it didn't. Instead, the code was %d",
+				resp.StatusCode)
+		}
+
+		if len(resp.Cookies()) != 1 {
+			t.Errorf("The request should have have included exactly one cookie but got %+v",
+				resp.Cookies())
+		}
+	}
+
+	// Test one cookie (fail)
+	{
+		req, err := http.NewRequest("POST", server.URL, formBodyR(vals))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		// Add cookies with invalid values
+		cookieCopy := *cookie
+		cookieCopy.Value = b64encode(generateToken())
+		req.AddCookie(&cookieCopy)
+
+		resp, err = http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if resp.StatusCode != FailureCode {
+			t.Errorf("The request should have failed, but it didn't. Instead, the code was %d",
+				resp.StatusCode)
+		}
+
+		if len(resp.Cookies()) != 0 {
+			t.Errorf("The request should not have set a cookie, but got %+v",
+				resp.Cookies())
+		}
+	}
 
 	// Test multipart
 	{
@@ -429,6 +492,29 @@ func TestCorrectTokenPasses(t *testing.T) {
 			t.Errorf("The request should have succeeded, but it didn't. Instead, the code was %d",
 				resp.StatusCode)
 		}
+	}
+}
+
+func TestCustomCookieName(t *testing.T) {
+	hand := New(http.HandlerFunc(succHand))
+
+	if hand.getCookieName(nil, nil) != CookieName {
+		t.Errorf("No base cookie set, expected CookieName to be %s, was %s", CookieName, hand.getCookieName(nil, nil))
+	}
+
+	hand.SetBaseCookie(http.Cookie{})
+
+	if hand.getCookieName(nil, nil) != CookieName {
+		t.Errorf("Base cookie with empty name set, expected CookieName to be %s, was %s", CookieName, hand.getCookieName(nil, nil))
+	}
+
+	customCookieName := "my_custom_cookie"
+	hand.SetBaseCookie(http.Cookie{
+		Name: customCookieName,
+	})
+
+	if hand.getCookieName(nil, nil) != customCookieName {
+		t.Errorf("Base cookie with name %s was set, but CookieName was %s instead", customCookieName, hand.getCookieName(nil, nil))
 	}
 }
 
