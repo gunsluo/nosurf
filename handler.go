@@ -217,7 +217,7 @@ func (h *CSRFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Finally, we check the token itself.
 	sentToken := extractToken(r)
 
-	if !verifyToken(realTokens[0], sentToken) {
+	if len(realTokens) != 1 || !verifyToken(realTokens[0], sentToken) {
 		ctxSetReason(r, ErrBadToken)
 		h.handleFailure(w, r)
 		return
