@@ -1,3 +1,3 @@
-module github.com/ory/nosurf
+module github.com/gunsluo/nosurf
 
-go 1.14
+go 1.18
